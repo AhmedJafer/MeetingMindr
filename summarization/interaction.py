@@ -6,6 +6,8 @@ from processing.formatting import TranscriptFormatter
 from summarization.evaluator import SummaryEvaluator
 import os
 from moviepy import VideoFileClip
+import markdown
+from weasyprint import HTML
 
 class CallInteraction:
     def __init__(self, audio_or_video_file, device, hugging_face_token,
@@ -64,7 +66,7 @@ class CallInteraction:
             * Use hierarchical structure with clear headings\n
             * Highlight critical information in **bold**\n
             * Use bullet points for lists and action items\n
-            * Present action items in a table format if there are more than 3\n
+            * Present action items in a bullets point format \n
             * Indicate priority levels for action items (High/Medium/Low) when context suggests importance\n\n
             
             ## Content Guidelines\n
@@ -101,6 +103,35 @@ class CallInteraction:
         )
         return response.choices[0].message.content
 
+    def _save_to_pdf(self, markdown_content, title, output_path):
+        # Convert markdown to HTML
+        html_content = markdown.markdown(markdown_content)
+
+        # Wrap HTML with title and simple style
+        html = f"""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 30px; }}
+                h1 {{ font-size: 28px; }}
+                h2 {{ font-size: 24px; }}
+                h3 {{ font-size: 20px; }}
+                ul {{ margin-left: 20px; }}
+                li {{ margin-bottom: 5px; }}
+                strong {{ font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <h1>{title}</h1>
+            {html_content}
+        </body>
+        </html>
+        """
+
+        # Generate PDF with weasyprint
+        HTML(string=html).write_pdf(output_path)
+
     def _evaluate_and_improve_summary(self, transcript, initial_summary, max_retries=5):
         summary = initial_summary
         for attempt in range(max_retries):
@@ -135,13 +166,10 @@ class CallInteraction:
         final_summary, feedback = self._evaluate_and_improve_summary(formatted_transcript, initial_summary)
 
         base_name = os.path.splitext(os.path.basename(self.audio_file))[0]
-        file_path = os.path.join(self.output_dir, f"{base_name}.txt")
+        summary_path = os.path.join(self.output_dir, f"{base_name}_summary.pdf")
+        transcript_path = os.path.join(self.output_dir, f"{base_name}_transcript.pdf")
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write("## Summary\n\n")
-            f.write(final_summary.strip())
-            f.write("\n\n---\n\n")
-            f.write("## Full Transcript\n\n")
-            f.write(formatted_transcript.strip())
+        self._save_to_pdf(final_summary.strip(), "Meeting Summary", summary_path)
+        self._save_to_pdf(formatted_transcript.strip(), "Full Meeting Transcript", transcript_path)
 
         return formatted_transcript, final_summary, feedback
